@@ -69,6 +69,23 @@ export async function upgradewWizzards(lastVersion) {
       },
     },
     {
+      version: '0.9.0',
+      name: 'Migrate serial theme',
+      action: () => {
+        return api.storage.get('settings/theme').then(res => {
+          if (typeof res !== 'undefined' && res === 'serial')
+            api.storage.set('settings/theme', 'auto');
+        });
+      },
+    },
+    {
+      version: '0.11.0',
+      name: 'Disable background listsync',
+      action: () => {
+        return api.storage.remove('backgroundListSync');
+      },
+    },
+    {
       version: '*',
       name: 'Remove auto domain permissions',
       action: () => {

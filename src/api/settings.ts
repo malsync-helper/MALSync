@@ -1,11 +1,14 @@
-import { reactive } from 'vue';
+import { reactive, ref } from 'vue';
 
 export const settingsObj = {
   options: reactive({
     autoTrackingModeanime: 'video',
+    readerTracking: true,
+    askBefore: true,
     autoTrackingModemanga: 'instant',
     enablePages: {},
     forceEn: false,
+    forceEnglishTitles: false,
     rpc: true,
     presenceLargeImage: 'cover',
     presenceShowButtons: true,
@@ -23,6 +26,11 @@ export const settingsObj = {
     epPredictions: true,
 
     theme: 'auto',
+    themeSidebars: true,
+    themeColor: '#000000',
+    themeOpacity: 100,
+    themeImage: '',
+
     minimalWindow: false,
     posLeft: 'left',
     miniMALonMal: false,
@@ -32,33 +40,29 @@ export const settingsObj = {
     floatButtonHide: false,
     autoCloseMinimal: false,
     outWay: true,
-    miniMalWidth: '500px',
+    miniMalWidth: '550px',
     miniMalHeight: '90%',
     malThumbnail: 100,
     friendScore: true,
     loadPTWForProgress: false,
 
     quicklinks: [
-      '9anime',
       'Crunchyroll',
       'Gogoanime',
-      'Twistmoe',
       'Mangadex',
       'MangaNato',
       'MangaFox',
       'MangaSee',
-      'YugenAnime',
-      'AniMixPlay',
-      'Zoro',
-      'Funimation',
+      'MangaFire',
+      'HiAnime',
       'Hulu',
       'Netflix',
       'Hidive',
-      'Vrv',
       'VIZ',
       'MangaPlus',
       'MangaReader',
-      'tenshi',
+      'ComicK',
+      'WeebCentral',
     ],
     quicklinksPosition: 'default',
 
@@ -81,6 +85,7 @@ export const settingsObj = {
     progressIntervalDefaultManga: 'en/sub',
     progressNotificationsAnime: true,
     progressNotificationsManga: true,
+    notificationsSticky: true,
 
     bookMarksList: false,
 
@@ -103,7 +108,16 @@ export const settingsObj = {
 
     malToken: '',
     malRefresh: '',
+
+    shikiToken: '',
+    shikiOptions: {
+      locale: 'ru',
+    },
   }),
+
+  debounceArray: {},
+
+  isInit: ref(false),
 
   async init() {
     const tempSettings = [];
@@ -124,7 +138,7 @@ export const settingsObj = {
           const storageChange = changes[key];
           if (/^settings\//i.test(key)) {
             this.options[key.replace('settings/', '')] = storageChange.newValue;
-            con.info(`Update ${key} option to ${storageChange.newValue}`);
+            con.info(`Update ${key} option to ${JSON.stringify(storageChange.newValue, null, 2)}`);
           }
         }
       }
@@ -152,10 +166,13 @@ export const settingsObj = {
       }
     });
 
+    this.isInit.value = true;
+
     return this;
   },
 
   get(name: string) {
+    if (!this.isInit.value) throw 'Settings not initialized';
     return this.options[name];
   },
 
@@ -168,6 +185,15 @@ export const settingsObj = {
 
     this.options[name] = value;
     return api.storage.set(`settings/${name}`, value);
+  },
+
+  setDebounce(name: string, value: any) {
+    this.options[name] = value;
+    clearTimeout(this.debounceArray[name]);
+    this.debounceArray[name] = setTimeout(() => {
+      this.set(name, value);
+      delete this.debounceArray[name];
+    }, 1000);
   },
 
   async getAsync(name: string) {

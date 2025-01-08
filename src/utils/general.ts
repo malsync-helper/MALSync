@@ -31,15 +31,6 @@ export function getBaseText(element) {
   return text;
 }
 
-/**
- * Generates a (hex) string ID for randomisation/verification.
- */
-export function generateUniqueID(arraySize = 10): string {
-  const array = new Uint32Array(arraySize);
-  window.crypto.getRandomValues(array);
-  return Array.from(array, value => value.toString(16)).join('');
-}
-
 export function favicon(domain) {
   if (!domain) return '';
   const res = domain.match(/^(https?:\/\/)?[^/]+/);
@@ -132,7 +123,7 @@ export function fullUrlChangeDetect(callback, strip = false) {
   return Number(intervalId);
 }
 
-export function changeDetect(callback, func) {
+export function changeDetect(callback, func, immediate = false) {
   let currentPage = func();
   const intervalId = setInterval(function () {
     const temp = func();
@@ -141,6 +132,8 @@ export function changeDetect(callback, func) {
       callback();
     }
   }, 500);
+
+  if (immediate) callback();
 
   return Number(intervalId);
 }
@@ -470,6 +463,8 @@ export function getStatusText(type: 'anime' | 'manga', state) {
       return api.storage.lang('UI_Status_Dropped');
     case 6:
       return api.storage.lang(`UI_Status_planTo_${type}`);
+    case 7:
+      return api.storage.lang('UI_Status_All');
     case 23:
       return api.storage.lang(`UI_Status_Rewatching_${type}`);
     default:
@@ -757,9 +752,9 @@ function initflashm() {
 
   j.$('body').after(
     j.html(
-      `<div id="flash-div-top" style="text-align: center;pointer-events: none;position: fixed;top:-5px;width:100%;z-index: 2147483647;left: 0;"></div>\
-        <div id="flash-div-bottom" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;z-index: 2147483647;left: 0;"><div id="flash" style="display:none;  background-color: red;padding: 20px; margin: 0 auto;max-width: 60%;          -webkit-border-radius: 20px;-moz-border-radius: 20px;border-radius: 20px;background:rgba(227,0,0,0.6);"></div></div>\
-        <div id="flashinfo-div" class="${extraClass}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;left: 0;">`,
+      `<div id="flash-div-top" dir="${api.storage.langDirection()}" style="text-align: center;pointer-events: none;position: fixed;top:-5px;width:100%;z-index: 2147483647;left: 0;"></div>\
+        <div id="flash-div-bottom" dir="${api.storage.langDirection()}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;z-index: 2147483647;left: 0;"><div id="flash" style="display:none;  background-color: red;padding: 20px; margin: 0 auto;max-width: 60%;          -webkit-border-radius: 20px;-moz-border-radius: 20px;border-radius: 20px;background:rgba(227,0,0,0.6);"></div></div>\
+        <div id="flashinfo-div" dir="${api.storage.langDirection()}" class="${extraClass}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;left: 0;">`,
     ),
   );
 }
@@ -857,7 +852,7 @@ export function pageUrl(
     case 'anilist':
       return `https://anilist.co/${type}/${id}`;
     case 'kitsu':
-      return `https://kitsu.io/${type}/${id}`;
+      return `https://kitsu.app/${type}/${id}`;
     case 'simkl':
       return `https://simkl.com/${type}/${id}`;
     default:
@@ -868,8 +863,8 @@ export function pageUrl(
 export function returnYYYYMMDD(numFromToday = 0) {
   const d = new Date();
   d.setDate(d.getDate() + numFromToday);
-  const month = d.getMonth() < 9 ? `0${d.getMonth() + 1}` : d.getMonth() + 1;
-  const day = d.getDate() < 10 ? `0${d.getDate()}` : d.getDate();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
@@ -896,13 +891,33 @@ export function waitForPageToBeVisible() {
   });
 }
 
-export function makeDomainCompatible(domain: string) {
-  // Add '/' to end of origin if it doesn't exist
-  if (domain.split('/').length < 4) {
-    domain += '/';
+export async function clearCache() {
+  const cacheObj = await api.storage.list();
+  let deleted = 0;
+
+  for (const key in cacheObj) {
+    if (!utils.syncRegex.test(key) && !/(^tagSettings\/.*)/.test(key)) {
+      api.storage.remove(key);
+      deleted++;
+    }
   }
 
-  // Remove all after ?
-  domain = domain.replace(/\?.*/, '?');
-  return domain;
+  utils.flashm(`Cache Cleared [${deleted}]`);
+}
+
+export function sortAlphabetically(a, b) {
+  if (a.toLowerCase() < b.toLowerCase()) return -1;
+  if (a.toLowerCase() > b.toLowerCase()) return 1;
+  return 0;
+}
+
+export function isDomainMatching(url, domain) {
+  const urlObj = new URL(url);
+  const { host } = urlObj;
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+export function upperCaseFirstLetter(string) {
+  if (!string || string.length < 2) return string;
+  return string.charAt(0).toUpperCase() + string.slice(1);
 }

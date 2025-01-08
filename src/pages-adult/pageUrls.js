@@ -3,7 +3,7 @@ module.exports = {
     match: ['*://anilist.co/404'],
   },
   kitsu: {
-    match: ['*://kitsu.io/404?mal-sync=authentication*'],
+    match: ['*://kitsu.app/404?mal-sync=authentication*'],
   },
   simkl: {
     match: ['*://simkl.com/apps/chrome/mal-sync/connected*'],
@@ -13,9 +13,6 @@ module.exports = {
   },
   hanime: {
     match: ['*://*.hanime.tv/*'],
-  },
-  HentaiHaven: {
-    match: ['*://hentaihaven.org/*'],
   },
   Hentaigasm: {
     match: ['*://hentaigasm.com/*'],

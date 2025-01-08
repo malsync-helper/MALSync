@@ -12,31 +12,46 @@ import { initUserProgressScheduler } from './background/releaseProgress';
 import { pwa } from './floatbutton/userscriptPwa';
 import { databaseRequest, initDatabase } from './background/database';
 import { anilistOauth } from './anilist/oauth';
+import { shikiOauth } from './_provider/Shikimori/oauth';
 
 let page;
 
 function main() {
-  if (window.location.href.indexOf('myanimelist.net') > -1) {
+  if (utils.isDomainMatching(window.location.href, 'myanimelist.net')) {
     injectDb();
     const mal = new MyAnimeListClass(window.location.href);
     mal.init();
     if (window.location.href.indexOf('episode') > -1) {
       runPage();
     }
-  } else if (window.location.href.indexOf('anilist.co') > -1) {
+  } else if (utils.isDomainMatching(window.location.href, 'anilist.co')) {
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
     const anilist = new AnilistClass(window.location.href);
-  } else if (window.location.href.indexOf('kitsu.io') > -1) {
+  } else if (utils.isDomainMatching(window.location.href, 'kitsu.app')) {
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
     const kitsu = new KitsuClass(window.location.href);
-  } else if (window.location.href.indexOf('simkl.com') > -1) {
+  } else if (utils.isDomainMatching(window.location.href, 'simkl.com')) {
     /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
     const simkl = new SimklClass(window.location.href);
-  } else if (window.location.href.indexOf('malsync.moe/mal/oauth') > -1) {
+  } else if (
+    window.location.hostname === 'malsync.moe' &&
+    window.location.pathname.startsWith('/mal/oauth')
+  ) {
     oauth();
-  } else if (window.location.href.indexOf('malsync.moe/anilist/oauth') > -1) {
+  } else if (
+    window.location.hostname === 'malsync.moe' &&
+    window.location.pathname.startsWith('/anilist/oauth')
+  ) {
     anilistOauth();
-  } else if (window.location.href.indexOf('malsync.moe/pwa') > -1) {
+  } else if (
+    window.location.hostname === 'malsync.moe' &&
+    window.location.pathname.startsWith('/shikimori/oauth')
+  ) {
+    shikiOauth();
+  } else if (
+    window.location.hostname === 'malsync.moe' &&
+    window.location.pathname.startsWith('/pwa')
+  ) {
     injectDb();
     pwa();
   } else {
