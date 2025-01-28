@@ -208,11 +208,20 @@ export class MyAnimeListClass {
     }
   }
 
+  getImage() {
+    return $('.leftside img').first().attr('src') || '';
+  }
+
+  getTitle() {
+    const title = $('meta[property="og:title"]').first().attr('content')!.trim() || '';
+    return title.replace(/(^watch|episode \d*$)/gi, '').trim();
+  }
+
   async malToKiss() {
     $(document).ready(() => {
       con.log('malToKiss');
 
-      const title = $('meta[property="og:title"]').first().attr('content')!.trim();
+      const title = this.getTitle();
 
       activeLinks(this.type!, this.id, title).then(links => {
         let html = '';
@@ -221,7 +230,7 @@ export class MyAnimeListClass {
           let tempHtml = '';
 
           page.links.forEach(stream => {
-            tempHtml += `<div class="mal_links"><a target="_blank" href="${stream.url}">${stream.name}</a></div>`;
+            tempHtml += `<div class="mal_links" style="word-break: break-all;"><a target="_blank" href="${stream.url}">${stream.name}</a></div>`;
           });
 
           html += `<h2 id="${page.name}Links" class="mal_links"><img src="${utils.favicon(
@@ -502,7 +511,7 @@ export class MyAnimeListClass {
 
   related() {
     $(document).ready(function () {
-      $('.anime_detail_related_anime a').each(function () {
+      $('.related-entries .title a, .related-entries .entries a').each(function () {
         const el = $(this);
         const url = utils.absoluteLink(el.attr('href'), 'https://myanimelist.net');
         if (typeof url !== 'undefined') {

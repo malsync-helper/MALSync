@@ -1,5 +1,5 @@
 import { searchInterface } from '../definitions';
-import { parseJson } from '../Errors';
+import * as helper from './helper';
 
 export const search: searchInterface = async function (
   keyword,
@@ -9,7 +9,7 @@ export const search: searchInterface = async function (
 ) {
   const query = `
     query ($search: String) {
-      ${type}: Page (perPage: 10) {
+      ${type}: Page (perPage: 25) {
         pageInfo {
           total
         }
@@ -17,6 +17,8 @@ export const search: searchInterface = async function (
           id
           siteUrl
           idMal
+          episodes
+          chapters
           title {
             userPreferred
             romaji
@@ -24,8 +26,10 @@ export const search: searchInterface = async function (
             native
           }
           coverImage {
-            medium
+            large
+            extraLarge
           }
+          bannerImage
           type
           format
           averageScore
@@ -42,19 +46,7 @@ export const search: searchInterface = async function (
     search: keyword,
   };
 
-  const response = await api.request.xhr('POST', {
-    url: 'https://graphql.anilist.co',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    data: JSON.stringify({
-      query,
-      variables,
-    }),
-  });
-
-  const res = parseJson(response.responseText);
+  const res = await helper.apiCall(query, variables, false);
   con.log(res);
 
   const resItems: any = [];
@@ -68,13 +60,16 @@ export const search: searchInterface = async function (
       malUrl: () => {
         return item.idMal ? `https://myanimelist.net/${type}/${item.idMal}` : null;
       },
-      image: item.coverImage.medium,
+      image: helper.imgCheck(item.coverImage.large),
+      imageLarge: helper.imgCheck(item.coverImage.extraLarge),
+      imageBanner: helper.imgCheck(item.bannerImage),
       media_type: item.format
         ? (item.format.charAt(0) + item.format.slice(1).toLowerCase()).replace('_', ' ')
         : '',
       isNovel: item.format === 'NOVEL',
       score: item.averageScore,
       year: item.startDate.year,
+      totalEp: item.episodes || item.chapters || 0,
     });
   });
 

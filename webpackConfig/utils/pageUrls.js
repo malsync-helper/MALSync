@@ -23,7 +23,7 @@ module.exports = {
     match: ['*://anilist.co/*'],
   },
   kitsu: {
-    match: ['*://kitsu.io/*'],
+    match: ['*://kitsu.app/*'],
   },
   simkl: {
     match: ['*://simkl.com/*'],
@@ -33,6 +33,9 @@ module.exports = {
   },
   malsyncAnilist: {
     match: ['*://malsync.moe/anilist/oauth*'],
+  },
+  malsyncShiki: {
+    match: ['*://malsync.moe/shikimori/oauth*'],
   },
   malsyncPwa: {
     match: ['*://malsync.moe/pwa*'],

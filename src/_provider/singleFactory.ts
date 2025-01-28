@@ -6,6 +6,7 @@ import { Single as MalApiSingle } from './MyAnimeList_api/single';
 import { Single as SnilistSingle } from './AniList/single';
 import { Single as SitsuSingle } from './Kitsu/single';
 import { Single as SimklSingle } from './Simkl/single';
+import { Single as ShikiSingle } from './Shikimori/single';
 import { Single as LocalSingle } from './Local/single';
 
 export function getSingle(url: string) {
@@ -28,31 +29,30 @@ export function getSingle(url: string) {
   if (syncMode === 'SIMKL') {
     return new SimklSingle(url);
   }
+  if (syncMode === 'SHIKI') {
+    return new ShikiSingle(url);
+  }
   throw 'Unknown sync mode';
 }
 
-export async function getCacheKey(url: string): Promise<{ cacheKey: string; singleObj? }> {
-  if (/^https:\/\/myanimelist.net\/(anime|manga)\/\d+(\/|$)/.test(url)) {
-    return {
-      cacheKey: url.split('/')[4],
-    };
-  }
-
-  const cacheObj = new Cache(`cacheKey/${url}`, 7 * 24 * 60 * 60 * 1000);
+export async function getRulesCacheKey(
+  url: string,
+): Promise<{ rulesCacheKey: string | number; singleObj? }> {
+  const cacheObj = new Cache(`rulesCacheKey/${url}`, 7 * 24 * 60 * 60 * 1000);
 
   if (await cacheObj.hasValue()) {
     return cacheObj.getValue().then(res => {
       return {
-        cacheKey: res,
+        rulesCacheKey: res,
       };
     });
   }
 
   const singleObj = getSingle(url);
   await singleObj.update();
-  cacheObj.setValue(singleObj.getCacheKey());
+  cacheObj.setValue(singleObj.getRulesCacheKey());
   return {
-    cacheKey: singleObj.getCacheKey(),
+    rulesCacheKey: singleObj.getRulesCacheKey(),
     singleObj,
   };
 }

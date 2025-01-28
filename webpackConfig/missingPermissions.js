@@ -23,11 +23,11 @@ async function main() {
 
   const version = manifest.version;
   const oldUrls = getUrls(manifest);
-  const diffUrls = getDiff(oldUrls);
   const descFile = path.join(__dirname, '../src/pages/diffUrls.json');
-  console.log(version, diffUrls);
   fs.readFile(descFile, 'utf8', function(err, data) {
     const currentData = JSON.parse(data);
+    const diffUrls = getDiff(oldUrls, currentData[version]);
+    console.log(version, diffUrls);
     currentData[version] = diffUrls;
 
     if(Object.keys(currentData).length > 5) {
@@ -44,7 +44,7 @@ async function main() {
   });
 }
 
-function getDiff(oldUrls) {
+function getDiff(oldUrls, oldDiff) {
   res = {};
 
   const oldPages = fs.readdirSync(path.join(__dirname, '../dist/lastExtension/content'))
@@ -55,7 +55,7 @@ function getDiff(oldUrls) {
   oldPages.forEach(page => {
     try {
       const urls = pagesUtils.urls(page);
-      const diffUrls = urls.match.filter(el => !oldUrls.includes(el)).map(el => formatUrls(el));
+      const diffUrls = urls.match.filter(el => !oldUrls.includes(el));
       if (diffUrls.length) {
         res[page] = diffUrls;
       }
@@ -67,17 +67,9 @@ function getDiff(oldUrls) {
   // Iframe urls
   res['iframe'] = pagesUtils
     .generateMatchExcludes(playerUrls)
-    .match.filter(el => !oldUrls.includes(el))
-    .map(el => formatUrls(el));
+    .match.filter(el => !oldUrls.includes(el));
 
   return res;
-}
-
-function formatUrls(url) {
-  const urlParts = url.split('/');
-  urlParts[0] = urlParts[0].replace('*:', 'https:');
-  urlParts[2] = urlParts[2].replace(/^\*\./gi, '');
-  return urlParts.join('/');
 }
 
 function getUrls(manifest) {
