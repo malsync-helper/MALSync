@@ -49,11 +49,15 @@ export const userscriptLegacy: storageInterface = {
     return message;
   },
 
+  langDirection() {
+    return 'ltr';
+  },
+
   assetUrl(filename) {
     return `https://raw.githubusercontent.com/MALSync/MALSync/master/assets/assets/${filename}`;
   },
 
-  injectCssResource(res, head) {
+  injectCssResource(res, head, code = null) {
     // eslint-disable-next-line jquery-unsafe-malsync/no-xss-jquery
     head.append(
       // eslint-disable-next-line jquery-unsafe-malsync/no-xss-jquery
@@ -61,7 +65,7 @@ export const userscriptLegacy: storageInterface = {
         .$('<style>')
         .attr('rel', 'stylesheet')
         .attr('type', 'text/css')
-        .html(GM_getResourceText(res)),
+        .html(code || GM_getResourceText(res)),
     );
   },
 
@@ -73,6 +77,14 @@ export const userscriptLegacy: storageInterface = {
       this.remove();
     };
     head.get(0).appendChild(s);
+  },
+
+  addProxyScriptToTag(tag, name) {
+    // @ts-ignore
+    const ps: { [key: string]: string } = proxyScripts;
+    if (!ps[name]) throw new Error(`Proxy script ${name} not found`);
+    tag.textContent = ps[name];
+    return tag;
   },
 
   updateDom(head) {

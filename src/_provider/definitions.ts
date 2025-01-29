@@ -4,7 +4,11 @@
   Manga = "manga"
 } */
 
+import { Component } from 'vue';
+
 export type contentType = 'anime' | 'manga';
+
+export type syncMethod = 'normal' | 'listSync';
 
 export enum status {
   NoState = 0,
@@ -34,6 +38,17 @@ export enum score {
 // score range 0 - 100
 export type score100 = number;
 
+// YYYY-MM-DD format
+export type startFinishDate = string | null;
+
+export type fuzzyDate = {
+  year: number | null;
+  month: number | null;
+  day: number | null;
+};
+
+export type rewatchCount = number;
+
 export type searchResult = {
   id: number;
   name: string;
@@ -41,10 +56,13 @@ export type searchResult = {
   url: string;
   malUrl: () => Promise<string | null>;
   image: string;
+  imageLarge: string;
+  imageBanner?: string;
   media_type: string;
   isNovel: boolean;
   score: string;
   year: string;
+  totalEp?: number;
   list?: {
     status: status;
     score: score;
@@ -58,3 +76,14 @@ export type searchInterface = (
   options?: {},
   sync?: boolean,
 ) => Promise<searchResult[]>;
+
+export interface ConfObj {
+  key: string;
+  title: string | (() => string);
+  system?: 'userscript' | 'webextension';
+  component: Component;
+  condition?: () => boolean;
+  change?: () => void;
+  props?: { [key: string]: any };
+  children?: ConfObj[];
+}

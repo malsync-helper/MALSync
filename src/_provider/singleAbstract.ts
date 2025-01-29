@@ -1,12 +1,14 @@
 import * as definitions from './definitions';
 
 import { Progress } from '../utils/progress';
-import { getProgressTypeList, predictionXhrGET } from '../background/releaseProgress';
+import { predictionXhrGET } from '../background/releaseProgressUtils';
 
 import { emitter, globalEmit } from '../utils/emitter';
 import { SafeError } from '../utils/errors';
+import { returnYYYYMMDD } from '../utils/general';
 import { errorMessage as _errorMessage } from './Errors';
 import { point10 } from './ScoreMode/point10';
+import { SyncTypes } from './helper';
 
 Object.seal(emitter);
 
@@ -21,17 +23,23 @@ export abstract class SingleAbstract {
 
   protected type: definitions.contentType | null = null;
 
+  protected syncMethod: definitions.syncMethod = 'normal';
+
   protected persistanceState;
 
   protected undoState;
 
   protected lastError;
 
+  protected askCompleted = false;
+
   public abstract shortName: string;
 
   protected abstract authenticationUrl: string;
 
   protected rewatchingSupport = true;
+
+  protected datesSupport = true;
 
   protected ids = {
     mal: NaN,
@@ -64,20 +72,20 @@ export abstract class SingleAbstract {
     return this.rewatchingSupport;
   }
 
+  public supportsDates() {
+    return this.datesSupport;
+  }
+
   public abstract getCacheKey();
 
   public abstract getPageId();
 
   public getApiCacheKey(): string | number {
-    if (this.ids.mal) {
-      return this.ids.mal;
-    }
+    return this.getKey(['ANILIST']);
+  }
 
-    if (this.ids.ani) {
-      return `anilist:${this.ids.ani}`;
-    }
-
-    return '';
+  public getRulesCacheKey(): string | number {
+    return this.getKey(['ANILIST', 'KITSU'], false);
   }
 
   abstract _setStatus(status: definitions.status): void;
@@ -93,6 +101,60 @@ export abstract class SingleAbstract {
   public getStatus(): definitions.status {
     if (!this.isOnList()) return definitions.status.NoState;
     return this._getStatus();
+  }
+
+  abstract _setStartDate(startDate: definitions.startFinishDate): void;
+
+  public setStartDate(startDate: definitions.startFinishDate): SingleAbstract {
+    if (this.supportsDates()) {
+      this._setStartDate(startDate);
+    }
+    return this;
+  }
+
+  abstract _getStartDate(): definitions.startFinishDate;
+
+  public getStartDate(): definitions.startFinishDate {
+    if (this.supportsDates()) {
+      return this._getStartDate();
+    }
+    return null;
+  }
+
+  abstract _setFinishDate(finishDate: definitions.startFinishDate): void;
+
+  public setFinishDate(finishDate: definitions.startFinishDate): SingleAbstract {
+    if (this.supportsDates()) {
+      this._setFinishDate(finishDate);
+    }
+    return this;
+  }
+
+  abstract _getFinishDate(): definitions.startFinishDate;
+
+  public getFinishDate(): definitions.startFinishDate {
+    if (this.supportsDates()) {
+      return this._getFinishDate();
+    }
+    return null;
+  }
+
+  abstract _setRewatchCount(rewatchCount: definitions.rewatchCount): void;
+
+  public setRewatchCount(rewatchCount: definitions.rewatchCount): SingleAbstract {
+    if (this.supportsRewatching()) {
+      this._setRewatchCount(rewatchCount);
+    }
+    return this;
+  }
+
+  abstract _getRewatchCount(): definitions.rewatchCount | null;
+
+  public getRewatchCount(): definitions.rewatchCount | null {
+    if (this.supportsRewatching()) {
+      return this._getRewatchCount();
+    }
+    return null;
   }
 
   public getScoreMode() {
@@ -190,15 +252,12 @@ export abstract class SingleAbstract {
     this.options = null;
   }
 
-  protected progress: boolean | Progress = false;
+  protected progress: false | Progress = false;
 
   protected progressXhr;
 
-  protected prList: { key: string; label: string }[] = [];
-
   public async initProgress() {
     const xhr = await predictionXhrGET(this.getType()!, this.getApiCacheKey());
-    this.prList = await getProgressTypeList(this.getType()!);
     return new Progress(this.getCacheKey(), this.getType()!)
       .init({
         uid: this.getCacheKey(),
@@ -211,6 +270,7 @@ export abstract class SingleAbstract {
         xhr,
       })
       .then(progress => {
+        this.updateProgress = false;
         this.progress = progress;
         this.progressXhr = xhr;
       });
@@ -221,26 +281,48 @@ export abstract class SingleAbstract {
     return this.progress;
   }
 
-  public getProgressOptions() {
-    const op: { value: string; key: string }[] = [];
+  public getProgressFormated() {
+    const op: {
+      label: string;
+      key: string;
+      state: 'complete' | 'ongoing' | 'dropped' | 'discontinued';
+      type: 'dub' | 'sub';
+      dropped: boolean;
+      episode: number;
+      lastEp?: {
+        total: number;
+        timestamp?: number;
+      };
+      predicition?: {
+        timestamp: number;
+        probability: 'low' | 'medium' | 'high';
+      };
+    }[] = [];
+    const languageNames = new Intl.DisplayNames('en', { type: 'language' });
+    con.log(this.progressXhr);
     if (this.progressXhr && Object.keys(this.progressXhr).length) {
       this.progressXhr.forEach(el => {
-        if (el.state === 'complete') return;
-        let val = `${el.lang.toUpperCase()} (${el.type.toUpperCase()})`;
-        if (this.prList && this.prList.length) {
-          const tTemp = this.prList.find(p => p.key === el.id);
-          if (tTemp) val = tTemp.label;
-        }
-        if (el.title) val = el.title;
-        if (el.lastEp && el.lastEp.total) val += ` EP${el.lastEp.total}`;
-        if (el.state === 'dropped') val += ` Incomplete`;
         op.push({
+          type: el.type,
           key: el.id,
-          value: val,
+          state: el.state,
+          label: languageNames.of(el.lang.replace(/^jp$/, 'ja')) || el.lang,
+          dropped: el.state === 'dropped' || el.state === 'discontinued',
+          episode: el.lastEp && el.lastEp.total ? el.lastEp.total : 0,
+          lastEp: el.lastEp,
+          predicition: el.prediction,
         });
       });
     }
     return op;
+  }
+
+  public getProgressOptions() {
+    return this.getProgressFormated().filter(el => el.state !== 'complete');
+  }
+
+  public getProgressCompleted() {
+    return this.getProgressFormated().filter(el => el.state === 'complete');
   }
 
   private updateProgress = false;
@@ -258,6 +340,35 @@ export abstract class SingleAbstract {
       this.options.p = mode;
       this.updateProgress = true;
     }
+    if (!api.settings.get('malTags')) {
+      utils
+        .setEntrySettings(this.type, this.getCacheKey(), this.options, this._getTags())
+        .then(() => this.initProgress());
+    }
+  }
+
+  public getProgressKey() {
+    let mode = this.getProgressMode();
+
+    if (!mode) {
+      if (this.getType() === 'anime') {
+        mode = api.settings.get('progressIntervalDefaultAnime');
+      } else {
+        mode = api.settings.get('progressIntervalDefaultManga');
+      }
+    }
+
+    if (!mode) return null;
+
+    const res = /^([^/]*)\/(.*)$/.exec(mode);
+
+    if (!res) return null;
+
+    return {
+      key: mode,
+      lang: res[1],
+      type: res[2],
+    };
   }
 
   public getPageRelations(): { name: string; icon: string; link: string }[] {
@@ -283,8 +394,8 @@ export abstract class SingleAbstract {
     if (this.ids.kitsu.id && name !== 'Kitsu') {
       res.push({
         name: 'Kitsu',
-        icon: 'https://kitsu.io/favicon-32x32-3e0ecb6fc5a6ae681e65dcbc2bdf1f17.png',
-        link: `https://kitsu.io/${this.type}/${this.ids.kitsu.id}`,
+        icon: 'https://kitsu.app/favicon-32x32-3e0ecb6fc5a6ae681e65dcbc2bdf1f17.png',
+        link: `https://kitsu.app/${this.type}/${this.ids.kitsu.id}`,
       });
     }
 
@@ -333,6 +444,7 @@ export abstract class SingleAbstract {
     this._setTags(
       await utils.setEntrySettings(this.type, this.getCacheKey(), this.options, this._getTags()),
     );
+    this.fixDates();
     return this._sync()
       .catch(e => {
         this.lastError = e;
@@ -399,7 +511,10 @@ export abstract class SingleAbstract {
   }
 
   public isDirty(): boolean {
-    return JSON.stringify(this.persistanceState) !== JSON.stringify(this.getStateEl());
+    return (
+      JSON.stringify(this.persistanceState) !== JSON.stringify(this.getStateEl()) ||
+      this.updateProgress
+    );
   }
 
   public undo(): Promise<void> {
@@ -460,15 +575,7 @@ export abstract class SingleAbstract {
 
   public getMalUrl(): string | null {
     if (!Number.isNaN(this.ids.mal)) {
-      let title;
-      try {
-        title = this.getTitle().replace(/\//, '_');
-      } catch (e) {
-        con.error('no title found');
-      }
-      return `https://myanimelist.net/${this.getType()}/${this.ids.mal}/${encodeURIComponent(
-        title,
-      )}`;
+      return `https://myanimelist.net/${this.getType()}/${this.ids.mal}`;
     }
     return null;
   }
@@ -519,12 +626,19 @@ export abstract class SingleAbstract {
     return null;
   }
 
+  public increaseRewatchCount(): void {
+    //  do nothing
+  }
+
   getStateEl() {
     return {
       onList: this.isOnList(),
       episode: this.getEpisode(),
       volume: this.getVolume(),
       status: this.getStatus(),
+      startDate: this.getStartDate(),
+      finishDate: this.getFinishDate(),
+      rewatchCount: this.getRewatchCount(),
       score: this.getScore(),
       absoluteScore: this.getAbsoluteScore(),
     };
@@ -535,6 +649,9 @@ export abstract class SingleAbstract {
     this.setEpisode(state.episode);
     this.setVolume(state.volume);
     this.setStatus(state.status);
+    this.setStartDate(state.startDate);
+    this.setFinishDate(state.finishDate);
+    this.setRewatchCount(state.rewatchCount);
     this.setScore(state.score);
     if (state.absoluteScore) this.setAbsoluteScore(state.absoluteScore);
   }
@@ -551,6 +668,53 @@ export abstract class SingleAbstract {
       return diff;
     }
     return undefined;
+  }
+
+  public getSyncMethod(): definitions.syncMethod {
+    return this.syncMethod;
+  }
+
+  public setSyncMethod(method: definitions.syncMethod) {
+    this.syncMethod = method;
+  }
+
+  private fixDates() {
+    if (!this.supportsDates() || this.getSyncMethod() === 'listSync') {
+      return;
+    }
+
+    const today = returnYYYYMMDD();
+    if (
+      this.getStartDate() === null &&
+      this._getStatus() === definitions.status.Watching &&
+      this._getEpisode() > 0
+    ) {
+      this.setStartDate(today);
+    }
+
+    if (this.getFinishDate() === null && this._getStatus() === definitions.status.Completed) {
+      this.setFinishDate(today);
+
+      if (this.getStartDate() === null) {
+        this.setStartDate(today);
+      }
+    }
+  }
+
+  public async lifeCycleHook(state: 'afterCheckSync' | 'beforeSync') {
+    if (this.askCompleted) {
+      if (
+        (state === 'afterCheckSync' && api.settings.get('askBefore')) ||
+        (state === 'beforeSync' && !api.settings.get('askBefore'))
+      ) {
+        this.askCompleted = false;
+        if (this.getStatus() === definitions.status.Rewatching) {
+          await this.finishRewatchingMessage();
+        } else {
+          await this.finishWatchingMessage();
+        }
+      }
+    }
   }
 
   public async checkSync(episode: number, volume?: number): Promise<boolean> {
@@ -578,11 +742,7 @@ export abstract class SingleAbstract {
     }
 
     if (episode && episode === this.getTotalEpisodes()) {
-      if (curStatus === definitions.status.Rewatching) {
-        await this.finishRewatchingMessage();
-      } else {
-        await this.finishWatchingMessage();
-      }
+      this.askCompleted = true;
       return true;
     }
 
@@ -597,7 +757,10 @@ export abstract class SingleAbstract {
     return utils
       .flashConfirm(api.storage.lang(`syncPage_flashConfirm_start_${this.getType()}`), 'add')
       .then(res => {
-        if (res) this.setStatus(definitions.status.Watching);
+        if (res) {
+          this.setStatus(definitions.status.Watching);
+          this.setStartDate(returnYYYYMMDD());
+        }
         return res;
       });
   }
@@ -619,6 +782,10 @@ export abstract class SingleAbstract {
       .then(res => {
         if (res) {
           this.setStatus(definitions.status.Completed);
+          this.setFinishDate(returnYYYYMMDD());
+          if (!this.getStartDate()) {
+            this.setStartDate(returnYYYYMMDD());
+          }
           const finishScore = Number(j.$('#finish_score').val());
           if (finishScore > 0) {
             this.logger.log(`finish_score: ${j.$('#finish_score :selected').val()}`);
@@ -649,7 +816,10 @@ export abstract class SingleAbstract {
         'complete',
       )
       .then(res => {
-        if (res) this.setStatus(definitions.status.Completed);
+        if (res) {
+          this.setStatus(definitions.status.Completed);
+          this.increaseRewatchCount();
+        }
         return res;
       });
   }
@@ -676,21 +846,27 @@ export abstract class SingleAbstract {
   public getStatusCheckbox() {
     const statusEs = [
       {
-        value: '1',
+        value: definitions.status.Watching.toString(),
         label: api.storage.lang(`UI_Status_watching_${this.getType()}`),
       },
-      { value: '2', label: api.storage.lang('UI_Status_Completed') },
-      { value: '3', label: api.storage.lang('UI_Status_OnHold') },
-      { value: '4', label: api.storage.lang('UI_Status_Dropped') },
       {
-        value: '6',
+        value: definitions.status.Completed.toString(),
+        label: api.storage.lang('UI_Status_Completed'),
+      },
+      { value: definitions.status.Onhold.toString(), label: api.storage.lang('UI_Status_OnHold') },
+      {
+        value: definitions.status.Dropped.toString(),
+        label: api.storage.lang('UI_Status_Dropped'),
+      },
+      {
+        value: definitions.status.PlanToWatch.toString(),
         label: api.storage.lang(`UI_Status_planTo_${this.getType()}`),
       },
     ];
 
-    if (this.rewatchingSupport) {
+    if (this.supportsRewatching()) {
       statusEs.push({
-        value: '23',
+        value: definitions.status.Rewatching.toString(),
         label: api.storage.lang(`UI_Status_Rewatching_${this.getType()}`),
       });
     }
@@ -704,6 +880,14 @@ export abstract class SingleAbstract {
 
   public getStatusCheckboxValue() {
     return this.getStatus();
+  }
+
+  public getKey(allowed: SyncTypes[], forceMal = true) {
+    if (forceMal && this.ids.mal) return this.ids.mal;
+    if (this.ids.ani && allowed.includes('ANILIST')) return `anilist:${this.ids.ani}`;
+    if (this.ids.kitsu.id && allowed.includes('KITSU')) return `kitsu:${this.ids.kitsu.id}`;
+    if (this.ids.simkl && allowed.includes('SIMKL')) return `simkl:${this.ids.simkl}`;
+    return this.ids.mal;
   }
 
   public getLastError() {

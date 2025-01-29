@@ -3,9 +3,6 @@ import { firebaseNotification } from '../utils/firebaseNotification';
 import { shortcutListener } from '../utils/player';
 import { floatClick } from '../floatbutton/extension';
 import { pageInterface } from '../pages/pageInterface';
-import { initShark } from '../utils/shark';
-
-initShark();
 
 let lastFocus;
 
@@ -46,7 +43,11 @@ function messagePageListener(page) {
     if (msg.action === 'TabMalUrl') {
       if (Date.now() - lastFocus < 3 * 1000) {
         con.log('TabMalUrl Message', page.singleObj.url);
-        sendResponse(page.singleObj.url);
+        sendResponse({
+          url: page.singleObj.url,
+          title: page.singleObj.getTitle(),
+          image: page.singleObj.getImage(),
+        });
       }
     }
     if (msg.action === 'videoTime') {

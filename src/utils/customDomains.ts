@@ -1,16 +1,23 @@
+import { isValidPattern } from 'webext-patterns';
 import { domainType } from '../background/customDomain';
 import { hasDomainPermission } from './manifest';
 import { greaterOrEqualCurrentVersion } from './version';
-import { pages } from '../pages/pages';
+import { getPages } from './quicklinksBuilder';
 
 export function getPageOptions() {
-  const options = [{ key: 'iframe', title: 'Video Iframe' }];
-  Object.keys(pages).forEach(key => {
-    options.push({
-      key,
-      title: pages[key].name,
+  const options = [
+    { key: 'iframe', title: 'Video Iframe' },
+    { key: 'hostpermission', title: 'Host Permission' },
+    { key: 'spacer1', title: '-_-_-' },
+  ];
+  getPages()
+    .sort((a, b) => utils.sortAlphabetically(a.name, b.name))
+    .forEach(page => {
+      options.push({
+        key: page.key,
+        title: page.name,
+      });
     });
-  });
   return options;
 }
 
@@ -91,4 +98,44 @@ export async function hasMissingPermissions(): Promise<boolean> {
   const missing = missingPermissions.getMissingPermissions(api.settings.get('customDomains'));
   con.m('Missing Permissions').log(missing);
   return Boolean(missing.length);
+}
+
+function getOrigins(permissions: domainType[]) {
+  return permissions.filter(perm => isValidPattern(perm.domain)).map(perm => perm.domain);
+}
+
+export async function requestPermissions(permissions: domainType[]) {
+  if (!sessionSupportsPermissions()) throw new Error('BadPermissionSession');
+  return new Promise(resolve => {
+    con.m('Request Permissions').log(getOrigins(permissions));
+    chrome.permissions.request(
+      {
+        permissions: ['scripting'],
+        origins: getOrigins(permissions),
+      },
+      granted => {
+        if (!granted) utils.flashm('Requesting the permissions failed', { error: true });
+        resolve(null);
+      },
+    );
+  });
+}
+
+export function sessionSupportsPermissions() {
+  return typeof chrome.permissions !== 'undefined';
+}
+
+export async function checkPermissions(permissions: domainType[]): Promise<boolean> {
+  if (!sessionSupportsPermissions()) throw new Error('BadPermissionSession');
+  return new Promise(resolve => {
+    chrome.permissions.contains(
+      {
+        permissions: ['scripting'],
+        origins: getOrigins(permissions),
+      },
+      result => {
+        resolve(result);
+      },
+    );
+  });
 }

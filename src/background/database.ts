@@ -55,7 +55,7 @@ export async function indexUpdate() {
   const globalMode = await api.settings.getAsync('syncMode');
   for (let i = 0; i < types.length; i++) {
     const type = types[i] as 'anime' | 'manga';
-    const state = await getKey(`update_${type}`);
+    const state = (await getKey(`update_${type}`)) as number;
     const mode = await getKey(`update_mode_${type}`);
 
     if (!state || state < Date.now() - UPDATE_INTERVAL || mode !== globalMode) {
@@ -150,6 +150,14 @@ export async function getEntry(
   return table.get(uid);
 }
 
+export async function getEntryByMalId(
+  type: 'anime' | 'manga',
+  malId: number,
+): Promise<undefined | Entry> {
+  const table = type === 'anime' ? db.table('anime') : db.table('manga');
+  return table.get({ malId });
+}
+
 export async function removeEntry(type: 'anime' | 'manga', uid: number | string) {
   const table = type === 'anime' ? db.table('anime') : db.table('manga');
   return table.where('uid').equals(uid).delete();
@@ -166,6 +174,9 @@ export async function databaseRequest(call: string, param: any) {
     case 'entry':
       indexUpdate();
       return getEntry(param.type, param.id);
+    case 'entryByMalId':
+      indexUpdate();
+      return getEntryByMalId(param.type, param.id);
     default:
       throw `Unknown call "${call}"`;
   }

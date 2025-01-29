@@ -13,11 +13,18 @@ export interface listElement {
   type: 'anime' | 'manga';
   title: string;
   url: string;
-  watchedEp: number;
-  totalEp: number;
-  status: number;
   score: number;
+  watchedEp: number;
+  readVol?: number;
+  totalEp: number;
+  totalVol?: number;
+  status: number;
+  startDate: string | null;
+  finishDate: string | null;
+  rewatchCount: number;
   image: string;
+  imageLarge: string;
+  imageBanner?: string;
   tags: string;
   airingState: number;
   fn: {
@@ -129,7 +136,7 @@ export abstract class ListAbstract {
 
     await this.getNext();
 
-    if (this.modes.cached) this.getCache().setValue(this.templist.slice(0, 18));
+    if (this.modes.cached) this.getCache().setValue(this.templist.slice(0, 24));
 
     this.firstLoaded = true;
 
@@ -184,15 +191,21 @@ export abstract class ListAbstract {
     }
   }
 
-  abstract getUsername(): Promise<string> | string;
+  public getUsername() {
+    return this.getUserObject().then(user => user.username);
+  }
+
+  abstract getUserObject(): Promise<{ username: string; picture: string; href: string }>;
 
   abstract _getSortingOptions(): { icon: string; title: string; value: string; asc?: boolean }[];
 
-  getSortingOptions(tree = false): { icon: string; title: string; value: string; child?: any }[] {
+  getSortingOptions(
+    simple = false,
+  ): { icon: string; title: string; value: string; asc?: boolean }[] {
     const res = [
       {
         icon: 'filter_list',
-        title: 'Default',
+        title: api.storage.lang('settings_progress_default'),
         value: 'default',
       },
     ];
@@ -200,26 +213,23 @@ export abstract class ListAbstract {
     if (this.status === 1 && this.listType === 'manga') {
       res.push({
         icon: 'adjust',
-        title: 'Unread',
+        title: api.storage.lang('list_sorting_unread'),
         value: 'unread',
       });
     }
 
     const options = this._getSortingOptions();
     options.forEach(el => {
-      if (el.asc) {
-        const asc = { ...el };
-        delete asc.asc;
-        asc.value += '_asc';
-        asc.title += ' Ascending';
-        if (tree) {
-          // @ts-ignore
-          el.child = asc;
-        } else {
+      if (!simple) {
+        if (el.asc) {
+          const asc = { ...el };
+          delete asc.asc;
+          asc.value += '_asc';
+          asc.title += ' Ascending';
           res.push(asc);
         }
+        delete el.asc;
       }
-      delete el.asc;
       res.push(el);
     });
     return res;
