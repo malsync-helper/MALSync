@@ -1,8 +1,9 @@
-/* eslint-disable no-shadow */
 import { MetaOverviewAbstract } from '../metaOverviewAbstract';
 import { UrlNotSupportedError } from '../Errors';
+import { buildProviderUrl, urlToSlug } from '../../utils/slugs';
 import * as helper from './helper';
-import { msDiffToShortTimeString } from '../../utils/time';
+import { dateFromTimezoneToTimezone, getWeektime } from '../../utils/time';
+import { IntlDuration, IntlRange } from '../../utils/IntlWrapper';
 
 enum mediaTypeDefinition {
   unknown = 'Unknown',
@@ -61,9 +62,10 @@ export class MetaOverview extends MetaOverviewAbstract {
   constructor(url) {
     super(url);
     this.logger = this.logger.m('MAL');
-    if (url.match(/myanimelist\.net\/(anime|manga)\/\d*/i)) {
-      this.type = utils.urlPart(url, 3) === 'anime' ? 'anime' : 'manga';
-      this.malId = Number(utils.urlPart(url, 4));
+    const { path } = urlToSlug(url);
+    if (path?.provider === 'MAL') {
+      this.type = path.type;
+      this.malId = Number(path.id);
       return;
     }
     throw new UrlNotSupportedError(url);
@@ -126,7 +128,12 @@ export class MetaOverview extends MetaOverviewAbstract {
   }
 
   private title(data) {
-    this.meta.title = data.title;
+    const useAltTitle = api.settings.get('forceEnglishTitles');
+    if (useAltTitle) {
+      this.meta.title = data.alternative_titles.en || data.title;
+    } else {
+      this.meta.title = data.title;
+    }
   }
 
   private description(data) {
@@ -135,6 +142,7 @@ export class MetaOverview extends MetaOverviewAbstract {
 
   private image(data) {
     if (data.main_picture && data.main_picture.medium) this.meta.image = data.main_picture.medium;
+    this.meta.imageLarge = data.main_picture?.large || data.main_picture?.medium || '';
   }
 
   private alternativeTitle(data) {
@@ -151,31 +159,31 @@ export class MetaOverview extends MetaOverviewAbstract {
   private statistics(data) {
     if (data.mean)
       this.meta.statistics.push({
-        title: 'Score:',
+        title: api.storage.lang('overview_sidebar_Score'),
         body: data.mean,
       });
 
     if (data.rank)
       this.meta.statistics.push({
-        title: 'Ranked:',
+        title: api.storage.lang('overview_sidebar_Ranked'),
         body: `#${data.rank}`,
       });
 
     if (data.popularity)
       this.meta.statistics.push({
-        title: 'Popularity:',
+        title: api.storage.lang('overview_sidebar_Popularity'),
         body: `#${data.popularity}`,
       });
 
     if (data.num_list_users)
       this.meta.statistics.push({
-        title: 'Members:',
+        title: api.storage.lang('overview_sidebar_Members'),
         body: data.num_list_users.toLocaleString(),
       });
 
     if (data.num_scoring_users)
       this.meta.statistics.push({
-        title: 'Rated:',
+        title: api.storage.lang('overview_sidebar_Votes'),
         body: data.num_scoring_users.toLocaleString(),
       });
   }
@@ -184,7 +192,7 @@ export class MetaOverview extends MetaOverviewAbstract {
     if (data.media_type) {
       const format = mediaTypeDefinition[data.media_type];
       this.meta.info.push({
-        title: 'Format:',
+        title: api.storage.lang('overview_sidebar_Format'),
         body: [
           {
             text: format ?? data.media_type,
@@ -196,36 +204,36 @@ export class MetaOverview extends MetaOverviewAbstract {
 
     if (data.num_episodes) {
       this.meta.info.push({
-        title: 'Episodes:',
+        title: api.storage.lang('overview_sidebar_Episodes'),
         body: [{ text: data.num_episodes }],
       });
     } else if (data.num_episodes === 0) {
       this.meta.info.push({
-        title: 'Episodes:',
+        title: api.storage.lang('overview_sidebar_Episodes'),
         body: [{ text: 'Unknown' }],
       });
     }
 
     if (data.num_chapters) {
       this.meta.info.push({
-        title: 'Chapters:',
+        title: api.storage.lang('overview_sidebar_Chapters'),
         body: [{ text: data.num_chapters }],
       });
     } else if (data.num_chapters === 0) {
       this.meta.info.push({
-        title: 'Chapters:',
+        title: api.storage.lang('overview_sidebar_Chapters'),
         body: [{ text: 'Unknown' }],
       });
     }
 
     if (data.num_volumes) {
       this.meta.info.push({
-        title: 'Volumes:',
+        title: api.storage.lang('overview_sidebar_Volumes'),
         body: [{ text: data.num_volumes }],
       });
     } else if (data.num_volumes === 0) {
       this.meta.info.push({
-        title: 'Volumes:',
+        title: api.storage.lang('overview_sidebar_Volumes'),
         body: [{ text: 'Unknown' }],
       });
     }
@@ -233,23 +241,19 @@ export class MetaOverview extends MetaOverviewAbstract {
     if (data.status) {
       const format = airingStatusDefinition[data.status];
       this.meta.info.push({
-        title: 'Status:',
+        title: api.storage.lang('overview_sidebar_Status'),
         body: [{ text: format ?? data.status }],
       });
     }
 
     if (data.start_date) {
-      let format = '';
-      if (data.start_date) format += `${data.start_date} `;
-      format += 'to ';
-      if (data.end_date) {
-        format += data.end_date;
-      } else {
-        format += '?';
-      }
       this.meta.info.push({
-        title: 'Aired:',
-        body: [{ text: format }],
+        title: api.storage.lang('overview_sidebar_Aired'),
+        body: [
+          {
+            text: new IntlRange(data.start_date, data.end_date).getDateTimeRangeText(),
+          },
+        ],
       });
     }
 
@@ -258,7 +262,7 @@ export class MetaOverview extends MetaOverviewAbstract {
       if (data.start_season.season) format += `${data.start_season.season} `;
       if (data.start_season.year) format += data.start_season.year;
       this.meta.info.push({
-        title: 'Premiered:',
+        title: api.storage.lang('overview_sidebar_Season'),
         body: [
           {
             url: `https://myanimelist.net/${this.type}/season/${data.start_season.year}/${data.start_season.season}`,
@@ -273,9 +277,25 @@ export class MetaOverview extends MetaOverviewAbstract {
       if (data.broadcast.day_of_the_week) format += `${data.broadcast.day_of_the_week} `;
       if (data.broadcast.day_of_the_week && data.broadcast.start_time) format += 'at ';
       if (data.broadcast.start_time) format += `${data.broadcast.start_time} (JST)`;
+      let body: any = [{ text: format }];
+
+      if (data.broadcast.day_of_the_week && data.broadcast.start_time) {
+        const weekDate = getWeektime(data.broadcast.day_of_the_week, data.broadcast.start_time);
+
+        if (weekDate) {
+          const broadcastDate = dateFromTimezoneToTimezone(weekDate, 'Asia/Tokyo');
+          body = [
+            {
+              date: broadcastDate,
+              type: 'weektime',
+            },
+          ];
+        }
+      }
+
       this.meta.info.push({
-        title: 'Broadcast:',
-        body: [{ text: format }],
+        title: api.storage.lang('overview_sidebar_Broadcast'),
+        body,
       });
     }
 
@@ -289,7 +309,7 @@ export class MetaOverview extends MetaOverviewAbstract {
       });
       if (studios.length)
         this.meta.info.push({
-          title: 'Studios:',
+          title: api.storage.lang('overview_sidebar_Studios'),
           body: studios,
         });
     }
@@ -302,12 +322,12 @@ export class MetaOverview extends MetaOverviewAbstract {
             i.node.first_name ?? ''
           }`,
           url: `https://myanimelist.net/people/${i.node.id}`,
-          subtext: i.role ? `(${i.role})` : '',
+          subtext: i.role || '',
         });
       });
       if (authors.length)
         this.meta.info.push({
-          title: 'Authors:',
+          title: api.storage.lang('overview_sidebar_Authors'),
           body: authors,
         });
     }
@@ -315,7 +335,7 @@ export class MetaOverview extends MetaOverviewAbstract {
     if (data.source) {
       const format = sourceDefinition[data.source];
       this.meta.info.push({
-        title: 'Source:',
+        title: api.storage.lang('overview_sidebar_Source'),
         body: [{ text: format ?? data.source }],
       });
     }
@@ -330,22 +350,26 @@ export class MetaOverview extends MetaOverviewAbstract {
       });
       if (genres.length)
         this.meta.info.push({
-          title: 'Genres:',
+          title: api.storage.lang('overview_sidebar_Genres'),
           body: genres,
         });
     }
 
     if (data.average_episode_duration) {
       this.meta.info.push({
-        title: 'Episode Duration:',
-        body: [{ text: msDiffToShortTimeString(data.average_episode_duration * 1000) }],
+        title: api.storage.lang('overview_sidebar_Duration'),
+        body: [
+          {
+            text: `${new IntlDuration().setRelativeTime(data.average_episode_duration, 'seconds', 'Duration').getRelativeText()}`,
+          },
+        ],
       });
     }
 
     if (data.rating) {
       const format = ratingDefinition[data.rating];
       this.meta.info.push({
-        title: 'Rating:',
+        title: api.storage.lang('overview_sidebar_Rating'),
         body: [{ text: format ?? data.rating }],
       });
     }
@@ -360,7 +384,7 @@ export class MetaOverview extends MetaOverviewAbstract {
       });
       if (serialization.length)
         this.meta.info.push({
-          title: 'Serialization:',
+          title: api.storage.lang('overview_sidebar_Serialization'),
           body: serialization,
         });
     }
@@ -379,11 +403,10 @@ export class MetaOverview extends MetaOverviewAbstract {
         }
 
         links[el.relation_type].links.push({
-          url: `https://myanimelist.net/anime/${el.node.id}`,
+          url: buildProviderUrl('MAL', 'anime', el.node.id),
           title: el.node.title,
           id: el.node.id,
           type: 'anime',
-          statusTag: '',
         });
       });
     }
@@ -398,11 +421,10 @@ export class MetaOverview extends MetaOverviewAbstract {
         }
 
         links[el.relation_type].links.push({
-          url: `https://myanimelist.net/manga/${el.node.id}`,
+          url: buildProviderUrl('MAL', 'manga', el.node.id),
           title: el.node.title,
           id: el.node.id,
           type: 'manga',
-          statusTag: '',
         });
       });
     }

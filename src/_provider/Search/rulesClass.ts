@@ -1,4 +1,5 @@
-/* eslint-disable no-shadow */
+import { pageUrl } from '../../utils/slugs';
+
 interface rules {
   provider: 'firebase' | 'user';
   cache?: boolean;
@@ -25,7 +26,10 @@ export class RulesClass {
 
   protected state: rules | undefined;
 
-  constructor(protected cacheKey: string, protected type: 'anime' | 'manga') {
+  constructor(
+    protected cacheKey: string | number,
+    protected type: 'anime' | 'manga',
+  ) {
     this.logger = con.m('Rules');
     return this;
   }
@@ -85,13 +89,13 @@ export class RulesClass {
           return {
             from: {
               title: rule.from.title,
-              url: utils.pageUrl(res.page, this.type, rule.from.id),
+              url: pageUrl(res.page, this.type, rule.from.id),
               start: rule.from.start,
               end: rule.from.end,
             },
             to: {
               title: rule.to.title,
-              url: utils.pageUrl(res.page, this.type, rule.to.id),
+              url: pageUrl(res.page, this.type, rule.to.id),
               start: rule.to.start,
               end: rule.to.end,
             },
@@ -119,14 +123,11 @@ export class RulesClass {
   public activeRule: any | undefined;
 
   public applyRules(currentEpisode: number, rules?): { url: string; offset: number } | undefined {
-    const logger = this.logger.m('apply');
     this.activeRule = undefined;
     if (!rules) rules = this.getRules();
-    logger.log(currentEpisode, rules);
     const rule = rules.find(el => el.from.start <= currentEpisode && el.from.end >= currentEpisode);
 
     if (rule) {
-      logger.log('Rule found', rule);
       this.activeRule = rule;
       return {
         url: rule.to.url,
@@ -140,7 +141,6 @@ export class RulesClass {
       if (selfRule) {
         const offset = selfRule.to.start - selfRule.from.start;
         const newEp = currentEpisode + offset;
-        logger.log('Self Rule', selfRule, newEp, offset);
         const res = this.applyRules(
           newEp,
           rules.filter(el => el.from.url !== el.to.url),

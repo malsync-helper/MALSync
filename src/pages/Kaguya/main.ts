@@ -10,7 +10,7 @@ let jsonData = {
 
 export const Kaguya: pageInterface = {
   name: 'Kaguya',
-  domain: 'https://kaguya.live',
+  domain: 'https://kaguya.app',
   languages: ['Vietnamese', 'English'],
   type: 'anime',
   isSyncPage(url) {
@@ -27,7 +27,7 @@ export const Kaguya: pageInterface = {
       return jsonData.aniId!;
     },
     getOverviewUrl(url) {
-      const id = Kaguya.sync!.getIdentifier(url);
+      const id = Kaguya.sync.getIdentifier(url);
 
       return `${Kaguya.domain}/anime/details/${id}`;
     },

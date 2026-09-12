@@ -4,7 +4,9 @@ import { UserList as MalList } from './MyAnimeList_hybrid/list';
 import { UserList as MalApiList } from './MyAnimeList_api/list';
 import { UserList as AnilistList } from './AniList/list';
 import { UserList as KitsuList } from './Kitsu/list';
+import { UserList as MangaBakaList } from './MangaBaka/list';
 import { UserList as SimklList } from './Simkl/list';
+import { UserList as ShikiList } from './Shikimori/list';
 import { UserList as LocalList } from './Local/list';
 
 export async function getList(...args) {
@@ -48,8 +50,14 @@ function getListObj(args, syncMode = '') {
   if (syncMode === 'KITSU') {
     return new KitsuList(status, listType, sorting);
   }
+  if (syncMode === 'MANGABAKA') {
+    return new MangaBakaList(status, listType, sorting);
+  }
   if (syncMode === 'SIMKL') {
     return new SimklList(status, listType, sorting);
+  }
+  if (syncMode === 'SHIKI') {
+    return new ShikiList(status, listType, sorting);
   }
   throw 'Unknown sync mode';
 }

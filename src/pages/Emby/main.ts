@@ -2,17 +2,7 @@ import { ScriptProxy } from '../../utils/scriptProxy';
 import { pageInterface } from '../pageInterface';
 
 // Define the variable proxy element:
-const proxy = new ScriptProxy();
-proxy.addCaptureVariable(
-  'ApiClient',
-  `
-    if (window.hasOwnProperty("ApiClient")) {
-      return ApiClient;
-    } else {
-      return undefined;
-    }
-  `,
-);
+const proxy = new ScriptProxy('Emby');
 
 let item: any;
 
@@ -39,48 +29,27 @@ async function checkApi(page) {
     const url = videoEl.attr('src');
     con.log(url);
     let itemId = '';
-    let apiKey = '';
-    let apiBase = '';
-
     if (url) {
       if (/blob:/i.test(url)) {
-        apiBase = await getBase();
         itemId = await returnPlayingItemId();
-        apiKey = await getApiKey();
       } else {
-        apiBase = url.split('/').splice(0, 4).join('/');
         itemId = utils.urlPart(url, 5);
-        apiKey = await getApiKey();
-        setBase(apiBase);
       }
     }
 
-    let reqUrl = `${apiBase}/Items?ids=${itemId}&api_key=${apiKey}`;
-    con.log('reqUrl', reqUrl, 'base', apiBase, 'apiKey', apiKey);
+    const response = await apiCall(`/Items?ids=${itemId}`);
+    const episodeInfo = JSON.parse(response.responseText).Items[0];
+    item = episodeInfo;
+    con.log('EpisodeInfo', episodeInfo);
 
-    api.request
-      .xhr('GET', reqUrl)
-      .then(response => {
-        const data = JSON.parse(response.responseText);
-        item = data.Items[0];
-        reqUrl = `${apiBase}/Genres?Ids=${item.SeriesId}&api_key=${apiKey}`;
-        con.log(data);
-        return api.request.xhr('GET', reqUrl);
-      })
-      .then(response => {
-        const genres: any = JSON.parse(response.responseText);
-        con.log('genres', genres);
-        for (let i = 0; i < genres.Items.length; i++) {
-          const genre = genres.Items[i];
-          if (genre.Name === 'Anime') {
-            con.info('Anime detected');
-            page.url = `${window.location.origin}/#!/itemdetails.html?id=${itemId}`;
-            page.handlePage(page.url);
-            $('html').removeClass('miniMAL-hide');
-            break;
-          }
-        }
-      });
+    const series = await serieInfo(episodeInfo.SeriesId);
+
+    if (series.isAnime) {
+      con.info('Anime detected');
+      page.url = `${window.location.origin}/#!/itemdetails.html?id=${itemId}`;
+      page.handlePage(page.url);
+      $('html').removeClass('miniMAL-hide');
+    }
   }
 }
 
@@ -88,27 +57,20 @@ async function urlChange(page) {
   $('html').addClass('miniMAL-hide');
   if (window.location.href.indexOf('id=') !== -1) {
     const id = utils.urlParam(window.location.href, 'id');
-    let reqUrl = `/Items?ids=${id}`;
-    apiCall(reqUrl).then(response => {
+    const reqUrl = `/Items?ids=${id}`;
+    await apiCall(reqUrl).then(async response => {
       const data = JSON.parse(response.responseText);
       switch (data.Items[0].Type) {
         case 'Season':
           con.log('Season', data);
           item = data.Items[0];
-          reqUrl = `/Genres?Ids=${item.SeriesId}`;
-          apiCall(reqUrl).then(response2 => {
-            const genres: any = JSON.parse(response2.responseText);
-            con.log('genres', genres);
-            for (let i = 0; i < genres.Items.length; i++) {
-              const genre = genres.Items[i];
-              if (genre.Name === 'Anime') {
-                con.info('Anime detected');
-                page.handlePage();
-                $('html').removeClass('miniMAL-hide');
-                break;
-              }
-            }
-          });
+          // eslint-disable-next-line no-case-declarations
+          const series = await serieInfo(item.SeriesId);
+          if (series.isAnime) {
+            con.info('Anime detected');
+            page.handlePage();
+            $('html').removeClass('miniMAL-hide');
+          }
           break;
         case 'Series':
           con.log('Series', data);
@@ -118,6 +80,26 @@ async function urlChange(page) {
       }
     });
   }
+}
+
+async function serieInfo(seriesId): Promise<{
+  isAnime: boolean;
+  seriesInfo: any;
+}> {
+  const reqUrl = `/Items?Ids=${seriesId}&fields=Genres,Path`;
+  return apiCall(reqUrl).then(response2 => {
+    const series = JSON.parse(response2.responseText);
+    con.log('SerieInfo', series);
+    const data = series.Items[0];
+    const foundAnime =
+      data.Genres.find(genre => genre === 'Anime') ||
+      data.Path.includes('Anime') ||
+      data.Path.includes('anime');
+    return {
+      isAnime: Boolean(foundAnime),
+      seriesInfo: data,
+    };
+  });
 }
 
 async function returnPlayingItemId() {
@@ -172,59 +154,77 @@ async function waitForBase() {
   });
 }
 
-async function testApi(retry = 0) {
-  let base = await getBase();
-  if (typeof base === 'undefined' || base === '') {
-    con.info('No base');
-    base = await waitForBase();
-  }
+async function prepareApi() {
+  const logger = con.m('Emby').m('Athentication');
+  logger.info('Start Authentication');
+  return getFromApiClient().catch(err => {
+    logger.error('ApiClient Failed', err);
+    logger.info('Waiting for Base');
+    return getFromPage().catch(async () => {
+      utils.flashm('Could not Authenticate');
+      throw 'Not Authenticated [Emby]';
+    });
+  });
+}
 
-  setBase(base);
+async function getFromApiClient() {
+  await utils.wait(2000);
+  await checkApiClient();
+  return testApi();
+}
 
-  return apiCall('/System/Info', null, base).then(async response => {
+async function getFromPage() {
+  const base = await waitForBase();
+  await setBase(base);
+  await askForApiKey();
+  return testApi();
+}
+
+async function testApi() {
+  return apiCall('/System/Info', null).then(async response => {
     if (response.status !== 200) {
       con.error('Not Authenticated');
-      setBase('');
-
-      if (retry < 1) {
-        try {
-          const apiC = await checkApiClient();
-          retry++;
-          if (apiC) return testApi(retry);
-        } catch (e) {
-          con.error('Could not get ApiClient', e);
-        }
-      }
+      await setBase('');
 
       throw 'Not Authenticated [Emby]';
-      return false;
     }
     return true;
   });
 }
 
 async function checkApiClient() {
-  return new Promise((resolve, reject) => {
-    proxy.addProxy(async (caller: ScriptProxy) => {
-      const apiClient: any = proxy.getCaptureVariable('ApiClient');
-      con.m('apiClient').log(apiClient);
-      if (
-        apiClient &&
-        apiClient._serverInfo &&
-        apiClient._serverInfo.RemoteAddress &&
-        apiClient._serverInfo.AccessToken
-      ) {
-        const base = await getBase();
-        if (typeof base === 'undefined' || base === '') {
-          setBase(`${apiClient._serverInfo.RemoteAddress}/emby`);
-        }
-        setApiKey(apiClient._serverInfo.AccessToken);
-        resolve(true);
-        return;
-      }
-      reject();
-    });
-  });
+  const apiClient: any = await proxy.getData();
+  con.m('apiClient').log(apiClient);
+
+  let domain = '';
+  let apiKey = '';
+
+  if (apiClient) {
+    if (
+      apiClient._serverInfo &&
+      apiClient._serverInfo.ManualAddressOnly &&
+      apiClient._serverInfo.ManualAddress
+    ) {
+      domain = apiClient._serverInfo.ManualAddress;
+    } else if (apiClient._serverAddress) {
+      domain = apiClient._serverAddress;
+    } else if (apiClient._serverInfo && apiClient._serverInfo.RemoteAddress) {
+      domain = apiClient._serverInfo.RemoteAddress;
+    }
+
+    if (apiClient._userAuthInfo && apiClient._userAuthInfo.AccessToken) {
+      apiKey = apiClient._userAuthInfo.AccessToken;
+    } else if (apiClient._serverInfo && apiClient._serverInfo.AccessToken) {
+      apiKey = apiClient._serverInfo.AccessToken;
+    }
+  }
+
+  if (domain && apiKey) {
+    await setBase(`${domain}/emby`);
+    await setApiKey(apiKey);
+    return;
+  }
+  throw 'No ApiClient';
 }
 
 async function askForApiKey() {
@@ -244,15 +244,7 @@ async function askForApiKey() {
       con.info('api', api);
       setApiKey(api);
       j.$(evt.target).parentsUntil('.flash').remove();
-      testApi()
-        .then(() => {
-          resolve(true);
-        })
-        .catch(async () => {
-          utils.flashm('Could not Authenticate');
-          await askForApiKey();
-          resolve(true);
-        });
+      resolve(true);
     });
     msg.find('.Cancel').click(function (evt) {
       j.$(evt.target).parentsUntil('.flash').remove();
@@ -316,16 +308,15 @@ export const Emby: pageInterface = {
       j.$('.page:not(.hide) .nameContainer').first().append(j.html(selector));
     },
   },
-  init(page) {
+  async init(page) {
     api.storage.addStyle(
       require('!to-string-loader!css-loader!less-loader!./style.less').toString(),
     );
-    testApi()
-      .catch(() => {
-        con.info('Not Authenticated');
-        return askForApiKey();
-      })
-      .then(() => {
+
+    await proxy.injectScript();
+
+    j.$(document).ready(function () {
+      prepareApi().then(() => {
         con.info('Authenticated');
         utils.changeDetect(
           () => {
@@ -369,5 +360,6 @@ export const Emby: pageInterface = {
           }
         });
       });
+    });
   },
 };

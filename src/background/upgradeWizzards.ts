@@ -1,4 +1,3 @@
-// eslint-disable-next-line import/no-extraneous-dependencies
 import semverGt from 'semver/functions/gt';
 
 export async function upgradewWizzards(lastVersion) {
@@ -66,6 +65,23 @@ export async function upgradewWizzards(lastVersion) {
           api.storage.set('settings/progressNotificationsAnime', mode);
           api.storage.set('settings/progressNotificationsManga', mode);
         });
+      },
+    },
+    {
+      version: '0.9.0',
+      name: 'Migrate serial theme',
+      action: () => {
+        return api.storage.get('settings/theme').then(res => {
+          if (typeof res !== 'undefined' && res === 'serial')
+            api.storage.set('settings/theme', 'auto');
+        });
+      },
+    },
+    {
+      version: '0.11.0',
+      name: 'Disable background listsync',
+      action: () => {
+        return api.storage.remove('backgroundListSync');
       },
     },
     {
