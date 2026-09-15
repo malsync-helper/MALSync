@@ -5,11 +5,16 @@ import { UserList } from '../_provider/AniList/list';
 import { activeLinks, removeFromOptions } from '../utils/quicklinksBuilder';
 import updateUi from './updateUi.vue';
 import { waitForPageToBeVisible } from '../utils/general';
+import { buildProviderUrl } from '../utils/slugs';
+import { NotAutenticatedError } from '../_provider/Errors';
+import type { listElement } from '../_provider/listAbstract';
 
 export class AnilistClass {
   page: any = null;
 
   private vueEl;
+
+  protected authError = false;
 
   constructor(public url: string) {
     let first = true;
@@ -66,10 +71,6 @@ export class AnilistClass {
       },
     );
 
-    if (this.url.indexOf('access_token=') > -1) {
-      this.init();
-    }
-
     api.storage.addStyle(
       require('!to-string-loader!css-loader!less-loader!./style.less').toString(),
     );
@@ -77,10 +78,6 @@ export class AnilistClass {
 
   async init() {
     await waitForPageToBeVisible();
-
-    if (this.url.indexOf('access_token=') > -1) {
-      this.authentication();
-    }
 
     const urlpart = utils.urlPart(this.url, 3);
     if (urlpart === 'anime' || urlpart === 'manga') {
@@ -112,52 +109,35 @@ export class AnilistClass {
     }
   }
 
-  async authentication() {
-    try {
-      utils.checkDoubleExecution();
-    } catch (e) {
-      con.error(e);
-    }
-    const tokens = /access_token=[^&]+/gi.exec(this.url);
-    if (tokens !== null && typeof tokens[0] !== 'undefined' && tokens[0]) {
-      const token = tokens[0].toString().replace(/access_token=/gi, '');
-      con.log('Token Found', token);
-
-      await api.settings.set('anilistToken', token);
-
-      $(document).ready(function () {
-        $('.page-content .container').html(
-          j.html(
-            `
-          <div style="text-align: center; margin-top: 50px; background-color: white; border: 1px solid lightgrey; padding: 10px;">
-            <h1>MAL-Sync</h1>
-            <br>
-            ${api.storage.lang('anilistClass_authentication')}
-          </div>
-        `,
-          ),
-        );
-      });
-    }
-  }
-
   async getMalUrl() {
     const urlpart = utils.urlPart(this.url, 3);
     if (urlpart === 'anime' || urlpart === 'manga') {
       const aniListId = utils.urlPart(this.url, 4);
       return helper.aniListToMal(Number(aniListId), urlpart).then(malId => {
         if (!malId) return '';
-        return `https://myanimelist.net/${urlpart}/${malId}/${utils.urlPart(this.url, 5)}`;
+        return buildProviderUrl('MAL', urlpart, malId);
       });
     }
     return '';
   }
 
+  getImage() {
+    return $('.header .cover').attr('src') || '';
+  }
+
+  getTitle() {
+    return $('h1').first().clone().children().remove().end().text().trim();
+  }
+
   malToKiss() {
+    if (!api.settings.get('anilistExternalSources')) {
+      con.log('Quicklinks disabled by settings');
+      return;
+    }
     $(document).ready(() => {
       con.log('malToKiss');
       $('.mal_links').remove();
-      const title = $('h1').first().clone().children().remove().end().text().trim();
+      const title = this.getTitle();
 
       activeLinks(this.page!.type, this.page!.apiCacheKey, title).then(links => {
         let html = '';
@@ -183,7 +163,7 @@ export class AnilistClass {
               margin-top: 16px;
               font-size: 1.2rem;
               position: relative;
-
+              word-break: break-all;
             ">
               <img src="${utils.favicon(page.domain)}" height="16" width="16">
               <span style="font-weight: 500; line-height: 16px; vertical-align: middle;">${
@@ -220,6 +200,11 @@ export class AnilistClass {
     await malObj.update();
     this.initVue(malObj);
     this.pageRelation(malObj);
+
+    if (!api.settings.get('anilistExternalSources')) {
+      con.log('Streaming UI disabled by settings');
+      return;
+    }
 
     const streamUrl = malObj.getStreamingUrl();
     if (streamUrl) {
@@ -271,10 +256,19 @@ export class AnilistClass {
   }
 
   async pageRelation(malObj) {
+    if (!api.settings.get('anilistExternalSources')) {
+      con.log('Page Relation disabled by settings');
+      return;
+    }
+
     await malObj.fillRelations();
 
     $('.malsync-rel-link').remove();
-    $('h1').first().append(j.html(`<div class="malsync-rel-link" style="float: right;"></div>`));
+    $('h1')
+      .first()
+      .append(
+        j.html('<div class="malsync-rel-link" style="float: right; user-select: none;"></div>'),
+      );
 
     malObj.getPageRelations().forEach(page => {
       $('.malsync-rel-link').append(
@@ -293,6 +287,7 @@ export class AnilistClass {
   private tempMangalist: any = null;
 
   bookmarks() {
+    if (this.authError) return;
     const This = this;
     $(document).ready(() => {
       $('.list-entries .entry, .list-entries .entry-card')
@@ -334,13 +329,14 @@ export class AnilistClass {
           fullListCallback(list);
         })
         .catch(e => {
+          if (e instanceof NotAutenticatedError) this.authError = true;
           con.error(e);
           listProvider.flashmError(e);
         });
 
       function fullListCallback(list) {
         con.log(list);
-        $.each(list, async (index, en) => {
+        $.each(list, async (index, en: listElement) => {
           const tempEl = $(
             `.entry:not(.malSyncDone2) a[href^="/${This.page!.type}/${
               en.uid
@@ -350,6 +346,11 @@ export class AnilistClass {
             const element = tempEl.first().parent();
 
             element.parent().addClass('malSyncDone2');
+
+            if (!api.settings.get('anilistExternalSources')) {
+              con.log('Page Relation disabled by settings');
+              en.options = { r: null, c: null, u: null } as any;
+            }
 
             if (en.options && en.options.u) {
               con.log(en.options.u);
@@ -366,8 +367,8 @@ export class AnilistClass {
                 );
             }
 
-            const resumeUrlObj = en.options.r;
-            const continueUrlObj = en.options.c;
+            const resumeUrlObj = en.options!.r;
+            const continueUrlObj = en.options!.c;
 
             const curEp = en.watchedEp;
 
@@ -397,14 +398,14 @@ export class AnilistClass {
             }
 
             await en.fn.initProgress();
-            if (en.fn.progress && en.fn.progress.isAiring() && en.fn.progress.getCurrentEpisode()) {
+            if (en.fn.progress?.isAiring() && en.fn.progress.progress()?.getCurrentEpisode()) {
               element
                 .parent()
                 .find('.progress')
                 .first()
                 .append(
                   j.html(
-                    ` <span class="mal-sync-ep-pre" title="${en.fn.progress.getAutoText()}">[<span style="border-bottom: 1px dotted ${en.fn.progress.getColor()};">${en.fn.progress.getCurrentEpisode()}</span>]</span>`,
+                    ` <span class="mal-sync-ep-pre" title="${en.fn.progress.progress()!.getAutoText()}">[<span style="border-bottom: 1px dotted ${en.fn.progress.getColor()};">${en.fn.progress.progress()!.getCurrentEpisode()!}</span>]</span>`,
                   ),
                 );
             }

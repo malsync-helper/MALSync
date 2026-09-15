@@ -1,6 +1,0 @@
-{
-  "search": "https://leviatanscans.com/?s={searchtermPlus}",
-  "urls": {
-    "match": ["*://leviatanscans.com/*"]
-  }
-}

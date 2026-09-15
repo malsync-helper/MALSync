@@ -1,5 +1,6 @@
 import { searchInterface } from '../definitions';
 import { parseJson } from '../Errors';
+import { buildProviderUrl } from '../../utils/slugs';
 import * as helper from './helper';
 
 export const search: searchInterface = async function (
@@ -16,12 +17,14 @@ export const search: searchInterface = async function (
         id: item.ids.simkl_id,
         name: item.title,
         altNames: [],
-        url: `https://simkl.com/${type}/${item.ids.simkl_id}/${item.ids.slug}`,
+        url: buildProviderUrl('SIMKL', type, item.ids.simkl_id),
         malUrl: async () => {
           const malId = await simklIdToMal(item.ids.simkl_id);
-          return malId ? `https://myanimelist.net/${type}/${malId}` : null;
+          return malId ? buildProviderUrl('MAL', type, malId) : null;
         },
-        image: `https://simkl.in/posters/${item.poster}_cm.jpg`,
+        image: `https://simkl.in/posters/${item.poster}_ca.jpg`,
+        imageLarge: `https://simkl.in/posters/${item.poster}_m.jpg`,
+        imageBanner: `https://simkl.in/posters/${item.poster}_w.jpg`,
         media_type: item.type,
         isNovel: false,
         score: null,
@@ -34,7 +37,7 @@ export const search: searchInterface = async function (
 
 async function call(
   url,
-  sData = {},
+  sData = {} as any,
   asParameter = false,
   methode: 'GET' | 'POST' = 'GET',
   login = true,
@@ -53,6 +56,10 @@ async function call(
 
   if (!login) {
     con.log('No login');
+  }
+
+  if (methode === 'GET') {
+    sData = undefined;
   }
 
   return api.request
@@ -74,7 +81,7 @@ async function call(
             break;
           }
           utils.flashm(
-            'Please Authenticate <a target="_blank" href="https://simkl.com/oauth/authorize?response_type=code&client_id=39e8640b6f1a60aaf60f3f3313475e830517badab8048a4e52ff2d10deb2b9b0&redirect_uri=https://simkl.com/apps/chrome/mal-sync/connected/">Here</a>',
+            `Please Authenticate <a target="_blank" href="${helper.getAuthUrl()}">Here</a>`,
             { error: true, type: 'error' },
           );
           throw getThrowError();

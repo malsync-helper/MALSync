@@ -6,10 +6,11 @@ import { compareTwoStrings } from 'string-similarity';
 
 import { search as pageSearch } from '../searchFactory';
 import { Single as LocalSingle } from '../Local/single';
-import { getCacheKey } from '../singleFactory';
+import { getRulesCacheKey } from '../singleFactory';
 import { RulesClass } from './rulesClass';
 
 import { getSyncMode } from '../helper';
+import { buildProviderUrl } from '../../utils/slugs';
 
 interface SearchResult {
   id?: number;
@@ -24,7 +25,7 @@ interface SearchResult {
 }
 
 export class SearchClass {
-  private sanitizedTitel;
+  private sanitizedTitle;
 
   private page;
 
@@ -44,7 +45,7 @@ export class SearchClass {
     protected identifier: string,
   ) {
     this.identifier += '';
-    this.sanitizedTitel = this.sanitizeTitel(this.title);
+    this.sanitizedTitle = this.sanitizeTitle(this.title);
     this.logger = con.m('search', 'red');
   }
 
@@ -100,7 +101,7 @@ export class SearchClass {
   }
 
   getOffset(): number {
-    if (this.state) {
+    if (this.state && this.state.offset) {
       return this.state.offset;
     }
     return 0;
@@ -127,8 +128,8 @@ export class SearchClass {
     return 0;
   }
 
-  getSanitizedTitel() {
-    return this.sanitizedTitel;
+  getSanitizedTitle() {
+    return this.sanitizedTitle;
   }
 
   getNormalizedType() {
@@ -136,9 +137,9 @@ export class SearchClass {
     return 'manga';
   }
 
-  public sanitizeTitel(title) {
+  public sanitizeTitle(title) {
     let resTitle = title.replace(
-      / *(\(dub\)|\(sub\)|\(uncensored\)|\(uncut\)|\(subbed\)|\(dubbed\))/i,
+      / *(\(dub\)|\(sub\)|\(uncensored\)|\(uncut\)|\(subbed\)|\(dubbed\)|\(novel\)|\(wn\)|\(ln\))/i,
       '',
     );
     resTitle = resTitle.replace(/ *\([^)]+audio\)/i, '');
@@ -261,7 +262,7 @@ export class SearchClass {
     ) {
       try {
         const temp = await this.pageSearch();
-        if (temp && !(temp.url.indexOf('myanimelist.net') !== -1) && temp.similarity.same) {
+        if (temp && !utils.isDomainMatching(temp.url, 'myanimelist.net') && temp.similarity.same) {
           this.logger.log('Ignore Firebase', result);
           result = temp;
         }
@@ -311,11 +312,10 @@ export class SearchClass {
     if (!matches || Object.keys(matches).length === 0) return false;
 
     const id = Object.keys(matches)[0];
-    const name = matches[id];
 
     let returnUrl = '';
 
-    if (id !== 'Not-Found') returnUrl = `https://myanimelist.net/${this.page.type}/${id}/${name}`;
+    if (id !== 'Not-Found') returnUrl = buildProviderUrl('MAL', this.page.type, id);
 
     return {
       url: returnUrl,
@@ -350,7 +350,11 @@ export class SearchClass {
 
     let pageUrl = res.malUrl;
 
-    if (!pageUrl && res.aniUrl && getSyncMode(this.getNormalizedType()) === 'ANILIST') {
+    if (
+      !pageUrl &&
+      res.aniUrl &&
+      ['ANILIST', 'MANGABAKA'].includes(getSyncMode(this.getNormalizedType()))
+    ) {
       pageUrl = res.aniUrl;
     }
 
@@ -368,34 +372,32 @@ export class SearchClass {
   public async malSearch(): Promise<SearchResult | false> {
     const logger = this.logger.m('MAL');
 
-    let url = `https://myanimelist.net/${this.getNormalizedType()}.php?q=${encodeURI(
-      this.sanitizedTitel,
+    const url = `https://myanimelist.net/${this.getNormalizedType()}.php?q=${encodeURI(
+      this.sanitizedTitle,
     )}`;
-    if (this.type === 'novel') {
-      url = `https://myanimelist.net/${this.getNormalizedType()}.php?type=2&q=${encodeURI(
-        this.sanitizedTitel,
-      )}`;
-    }
+
     logger.log(url);
 
-    function handleResult(response, i, This) {
+    function handleResult(response, i, This: SearchClass): SearchResult {
       const link = getLink(response, i);
       let id = 0;
       let sim = { same: false, value: 0 };
       if (link !== false) {
         try {
-          if (This.type === 'manga') {
+          if (This.type === 'manga' || This.type === 'novel') {
             const typeCheck = response.responseText
               .split(`href="${link}" id="si`)[1]
               .split('</tr>')[0];
-            if (typeCheck.indexOf('Novel') !== -1) {
-              logger.log('Novel Found check next entry');
+            const linkIsNovel = typeCheck.indexOf('Novel') !== -1;
+
+            if ((This.type === 'manga' && linkIsNovel) || (This.type === 'novel' && !linkIsNovel)) {
+              logger.log(`${linkIsNovel ? 'Novel Found' : 'Novel Not found'} check next entry`);
               return handleResult(response, i + 1, This);
             }
           }
 
-          const malTitel = getTitle(response, link);
-          sim = SearchClass.similarity(malTitel, This.sanitizedTitel);
+          const malTitle = getTitle(response, link);
+          sim = SearchClass.similarity(malTitle, This.sanitizedTitle);
           id = parseInt(link.split('/')[4]);
         } catch (e) {
           logger.error(e);
@@ -448,11 +450,11 @@ export class SearchClass {
   }
 
   public async pageSearch(): Promise<SearchResult | false> {
-    const searchResult = await pageSearch(this.sanitizedTitel, this.getNormalizedType());
+    const searchResult = await pageSearch(this.sanitizedTitle, this.getNormalizedType());
     let best: any = null;
     for (let i = 0; i < searchResult.length && i < 5; i++) {
       const el = searchResult[i];
-      const sim = SearchClass.similarity(el.name, this.sanitizedTitel, el.altNames);
+      const sim = SearchClass.similarity(el.name, this.sanitizedTitle, el.altNames);
       const tempBest = {
         index: i,
         similarity: sim,
@@ -584,6 +586,9 @@ export class SearchClass {
     if (this.page.database === 'Crunchyroll') {
       return encodeURIComponent(title.toLowerCase().split('#')[0]).replace(/\./g, '%2E');
     }
+    if (this.page.database === 'MangaFire') {
+      return encodeURIComponent(title.toLowerCase().split('#')[0]);
+    }
     return title.toLowerCase().split('#')[0].replace(/\./g, '%2E');
   }
 
@@ -595,9 +600,9 @@ export class SearchClass {
     const url = this.getUrl();
     logger.log('Url', url);
     if (url) {
-      const cacheKeyObj = await getCacheKey(url);
+      const cacheKeyObj = await getRulesCacheKey(url);
       logger.log('Cachekey', cacheKeyObj);
-      this.rules = await new RulesClass(cacheKeyObj.cacheKey, this.getNormalizedType()).init();
+      this.rules = await new RulesClass(cacheKeyObj.rulesCacheKey, this.getNormalizedType()).init();
       return cacheKeyObj.singleObj;
     }
     return undefined;

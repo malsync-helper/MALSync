@@ -1,4 +1,5 @@
 import { searchInterface } from '../definitions';
+import { buildProviderUrl } from '../../utils/slugs';
 import * as helper from './helper';
 
 const tempObj = {
@@ -30,7 +31,14 @@ export const search: searchInterface = async function (
     .apiCall({
       type: 'GET',
       path: `${type}?q=${keyword}&limit=15&nsfw=true`,
-      fields: ['start_date', 'mean', 'alternative_titles', 'media_type'],
+      fields: [
+        'start_date',
+        'mean',
+        'alternative_titles',
+        'media_type',
+        'num_episodes',
+        'num_chapters',
+      ],
     })
     .then(json => {
       const resItems: any = [];
@@ -48,11 +56,12 @@ export const search: searchInterface = async function (
           id: item.node.id,
           name: item.node.title,
           altNames: alt,
-          url: `https://myanimelist.net/${type}/${item.node.id}`,
+          url: buildProviderUrl('MAL', type, item.node.id),
           malUrl: () => {
-            return `https://myanimelist.net/${type}/${item.node.id}`;
+            return buildProviderUrl('MAL', type, item.node.id);
           },
           image: item.node.main_picture?.medium ?? '',
+          imageLarge: item.node.main_picture?.large || item.node.main_picture?.medium || '',
           media_type: item.node.media_type
             ? (
                 item.node.media_type.charAt(0) + item.node.media_type.slice(1).toLowerCase()
@@ -61,6 +70,7 @@ export const search: searchInterface = async function (
           isNovel: item.node.media_type.toLowerCase().includes('novel'),
           score: item.node.mean,
           year: item.node.start_date,
+          totalEp: item.node.num_episodes || item.node.num_chapters || 0,
         });
       });
 

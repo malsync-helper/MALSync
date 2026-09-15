@@ -22,22 +22,13 @@ export function urlParam(url, name) {
   return decodeURI(results[1]) || 0;
 }
 
-export function getBaseText(element) {
-  let text = element.text();
-  element.children().each(function () {
-    // @ts-ignore
-    text = text.replace(j.$(this).text(), '');
-  });
-  return text;
-}
-
-/**
- * Generates a (hex) string ID for randomisation/verification.
- */
-export function generateUniqueID(arraySize = 10): string {
-  const array = new Uint32Array(arraySize);
-  window.crypto.getRandomValues(array);
-  return Array.from(array, value => value.toString(16)).join('');
+export function getBaseText(element: JQuery<Element>) {
+  return element
+    .contents()
+    .filter(function () {
+      return this.nodeType === Node.TEXT_NODE;
+    })
+    .text();
 }
 
 export function favicon(domain) {
@@ -69,9 +60,7 @@ export const syncRegex =
 
 export const rateLimitExclude = /^https:\/\/api.malsync.moe\/(shark|mal\/|nc\/mal\/.*\/progress$)/i;
 
-// eslint-disable-next-line no-shadow
 export enum status {
-  // eslint-disable-next-line no-shadow
   watching = 1,
   completed = 2,
   onhold = 3,
@@ -132,7 +121,7 @@ export function fullUrlChangeDetect(callback, strip = false) {
   return Number(intervalId);
 }
 
-export function changeDetect(callback, func) {
+export function changeDetect(callback, func, immediate = false) {
   let currentPage = func();
   const intervalId = setInterval(function () {
     const temp = func();
@@ -142,12 +131,26 @@ export function changeDetect(callback, func) {
     }
   }, 500);
 
+  if (immediate) callback();
+
   return Number(intervalId);
 }
 
-export function waitUntilTrue(condition: Function, callback: Function, interval = 100) {
-  const intervalId = setInterval(function () {
-    if (condition()) {
+export function waitUntilTrue(condition: Function, callback: Function, interval = 200) {
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
+  const intervalId = setInterval(async function () {
+    let state = false;
+    try {
+      const conditionState = condition() as boolean | Promise<boolean>;
+      if (conditionState && conditionState instanceof Promise) {
+        state = await conditionState;
+      } else {
+        state = conditionState;
+      }
+    } catch (e) {
+      con.info('Error in waitUntilTrue', e);
+    }
+    if (state) {
       clearInterval(intervalId);
       callback();
     }
@@ -377,7 +380,6 @@ export function canHideTabs() {
   return false;
 }
 
-// eslint-disable-next-line no-shadow
 export function statusTag(status, type, id) {
   const info = {
     anime: {
@@ -470,8 +472,12 @@ export function getStatusText(type: 'anime' | 'manga', state) {
       return api.storage.lang('UI_Status_Dropped');
     case 6:
       return api.storage.lang(`UI_Status_planTo_${type}`);
+    case 7:
+      return api.storage.lang('UI_Status_All');
     case 23:
       return api.storage.lang(`UI_Status_Rewatching_${type}`);
+    case 24:
+      return api.storage.lang('UI_Status_Considering');
     default:
       return '';
   }
@@ -479,8 +485,8 @@ export function getStatusText(type: 'anime' | 'manga', state) {
 
 // eslint-disable-next-line consistent-return
 export function notifications(url: string, title: string, message: string, iconUrl = '') {
-  const messageObj: chrome.notifications.NotificationOptions<true> = {
-    type: 'basic',
+  const messageObj = {
+    type: 'basic' as const,
     title,
     message,
     iconUrl,
@@ -579,7 +585,7 @@ export function flashm(
         </div>\
       </div>`;
 
-  let flashmEl;
+  let flashmEl: JQuery<HTMLElement>;
 
   if (
     typeof options !== 'undefined' &&
@@ -693,7 +699,7 @@ function initflashm() {
                  #flashinfo-div.hover .flashinfo{
                     opacity: 1;
                  }
-                 .flashinfo:hover{
+                 .flashinfo:hover, .flashinfo.open{
                     max-height:5000px !important;
                     z-index: 2147483647;
                     opacity: 1;
@@ -702,7 +708,7 @@ function initflashm() {
                  .flashinfo .synopsis{
                     transition: max-height 2s, max-width 2s ease 2s;
                  }
-                 .flashinfo:hover .synopsis{
+                 .flashinfo:hover .synopsis, .flashinfo.open .synopsis{
                     max-height:9999px !important;
                     max-width: 500px !important;
                     transition: max-height 2s;
@@ -713,22 +719,6 @@ function initflashm() {
                  }
                  #flashinfo-div:hover, #flashinfo-div.hover{
                   z-index: 2147483647;
-                 }
-                 #flashinfo-div.player-error {
-                   z-index: 2147483647;
-                 }
-                 #flashinfo-div.player-error .type-update{
-                  overflow: visible !important;
-                  opacity: 1 !important;
-                 }
-                 #flashinfo-div.player-error .player-error{
-                  display: block !important
-                 }
-                 #flashinfo-div.player-error-missing-permissions .player-error-missing-permissions{
-                  display: block !important
-                 }
-                 #flashinfo-div.player-error-missing-permissions .player-error-default{
-                  display: none !important
                  }
 
                  #flash-div-top, #flash-div-bottom, #flashinfo-div{
@@ -757,9 +747,9 @@ function initflashm() {
 
   j.$('body').after(
     j.html(
-      `<div id="flash-div-top" style="text-align: center;pointer-events: none;position: fixed;top:-5px;width:100%;z-index: 2147483647;left: 0;"></div>\
-        <div id="flash-div-bottom" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;z-index: 2147483647;left: 0;"><div id="flash" style="display:none;  background-color: red;padding: 20px; margin: 0 auto;max-width: 60%;          -webkit-border-radius: 20px;-moz-border-radius: 20px;border-radius: 20px;background:rgba(227,0,0,0.6);"></div></div>\
-        <div id="flashinfo-div" class="${extraClass}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;left: 0;">`,
+      `<div id="flash-div-top" dir="${api.storage.langDirection()}" style="text-align: center;pointer-events: none;position: fixed;top:-5px;width:100%;z-index: 2147483647;left: 0;"></div>\
+        <div id="flash-div-bottom" dir="${api.storage.langDirection()}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;z-index: 2147483647;left: 0;"><div id="flash" style="display:none;  background-color: red;padding: 20px; margin: 0 auto;max-width: 60%;          -webkit-border-radius: 20px;-moz-border-radius: 20px;border-radius: 20px;background:rgba(227,0,0,0.6);"></div></div>\
+        <div id="flashinfo-div" dir="${api.storage.langDirection()}" class="${extraClass}" style="text-align: center;pointer-events: none;position: fixed;bottom:0px;width:100%;left: 0;">`,
     ),
   );
 }
@@ -846,30 +836,11 @@ export function wait(ms: number) {
   });
 }
 
-export function pageUrl(
-  page: 'mal' | 'anilist' | 'kitsu' | 'simkl',
-  type: 'anime' | 'manga',
-  id: string | number,
-) {
-  switch (page) {
-    case 'mal':
-      return `https://myanimelist.net/${type}/${id}`;
-    case 'anilist':
-      return `https://anilist.co/${type}/${id}`;
-    case 'kitsu':
-      return `https://kitsu.io/${type}/${id}`;
-    case 'simkl':
-      return `https://simkl.com/${type}/${id}`;
-    default:
-      throw `${page} not a valid page`;
-  }
-}
-
 export function returnYYYYMMDD(numFromToday = 0) {
   const d = new Date();
   d.setDate(d.getDate() + numFromToday);
-  const month = d.getMonth() < 9 ? `0${d.getMonth() + 1}` : d.getMonth() + 1;
-  const day = d.getDate() < 10 ? `0${d.getDate()}` : d.getDate();
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
@@ -878,7 +849,7 @@ export function htmlDecode(text) {
 }
 
 export function isFirefox(): boolean {
-  return Boolean(typeof browser !== 'undefined' && typeof chrome !== 'undefined');
+  return __IS_FIREFOX__;
 }
 
 export function waitForPageToBeVisible() {
@@ -896,13 +867,33 @@ export function waitForPageToBeVisible() {
   });
 }
 
-export function makeDomainCompatible(domain: string) {
-  // Add '/' to end of origin if it doesn't exist
-  if (domain.split('/').length < 4) {
-    domain += '/';
+export async function clearCache() {
+  const cacheObj = await api.storage.list();
+  let deleted = 0;
+
+  for (const key in cacheObj) {
+    if (!utils.syncRegex.test(key) && !/(^tagSettings\/.*)/.test(key)) {
+      api.storage.remove(key);
+      deleted++;
+    }
   }
 
-  // Remove all after ?
-  domain = domain.replace(/\?.*/, '?');
-  return domain;
+  utils.flashm(`Cache Cleared [${deleted}]`);
+}
+
+export function sortAlphabetically(a, b) {
+  if (a.toLowerCase() < b.toLowerCase()) return -1;
+  if (a.toLowerCase() > b.toLowerCase()) return 1;
+  return 0;
+}
+
+export function isDomainMatching(url, domain) {
+  const urlObj = new URL(url);
+  const { host } = urlObj;
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+export function upperCaseFirstLetter(string) {
+  if (!string || string.length < 2) return string;
+  return string.charAt(0).toUpperCase() + string.slice(1);
 }

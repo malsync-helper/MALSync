@@ -2,7 +2,7 @@ import { pageInterface } from '../pageInterface';
 
 export const AnimeOnsen: pageInterface = {
   name: 'AnimeOnsen',
-  domain: 'https://animeonsen.xyz',
+  domain: ['https://animeonsen.xyz', 'https://www.animeonsen.xyz'],
   languages: ['English', 'Japanese'],
   type: 'anime',
   isOverviewPage(url) {
@@ -67,7 +67,7 @@ export const AnimeOnsen: pageInterface = {
       // generate ao.details url
       const contentId = AnimeOnsen.overview!.getIdentifier(url) || '';
       const overviewUrl = new URL(<string>AnimeOnsen.domain);
-      // eslint-disable-next-line jquery-unsafe-malsync/no-xss-jquery
+
       overviewUrl.pathname = `/details/${contentId}`;
       return overviewUrl.href;
     },
